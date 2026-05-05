@@ -39,72 +39,6 @@ It is designed for fast exploratory modeling of QM regions, reaction paths, tran
 - IRC-like `Run IRC ±` workflow from a selected imaginary mode.
 - macOS and Windows-aware ASE/Sella virtual environment installer.
 
----
-
-## Important scientific note
-
-The **Run IRC ±** button implements a practical **IRC-like downhill workflow**, not a strict formal IRC integrator.
-
-It does:
-
-1. Take the current TS/frequency geometry.
-2. Take the selected normal mode, usually the imaginary frequency.
-3. Displace the structure in the `+` and `−` directions along that mode.
-4. Optimize both displaced structures downhill.
-5. Combine the two branches into:
-
-```text
-reactant-side minimum → TS region → product-side minimum
-```
-
-This is very useful for fast reaction exploration and validation, but it is not the same as a rigorous mass-weighted IRC integration as implemented in major quantum chemistry packages.
-
----
-
-## What does the amplitude value mean?
-
-In the vibration/IRC panel, **Amplitude** controls how far atoms are displaced along a selected normal mode for visualization and related mode-following workflows.
-
-The plugin normalizes the selected normal-mode displacement vector so that the largest-moving atom moves approximately by the amplitude value in Å.
-
-For example:
-
-```text
-Amplitude = 0.40
-```
-
-means the largest-moving atom in the vibration animation is displaced by roughly **0.40 Å** from the reference geometry at maximum phase.
-
-### When to change amplitude
-
-Use the default value, typically `0.40 Å`, for normal visualization.
-
-Increase it when:
-
-- the vibration looks too small to see,
-- the imaginary mode is visually unclear,
-- you want to identify which bond is forming/breaking more easily.
-
-Decrease it when:
-
-- the animation looks unrealistic,
-- atoms overlap,
-- bonds appear to fly apart,
-- you are using the displacement as a starting point for IRC-like optimization and want a gentler perturbation.
-
-Suggested values:
-
-| Use case | Suggested amplitude |
-|---|---:|
-| Visualizing normal modes | `0.30–0.70 Å` |
-| Gentle IRC-like displacement | `0.05–0.20 Å` |
-| Very floppy protein/QM-region modes | `0.10–0.30 Å` |
-| Making a mode obvious for teaching/figures | `0.50–1.00 Å` |
-
-For reaction exploration, smaller values are usually safer.
-
----
-
 ## Requirements
 
 ### Required
@@ -131,6 +65,7 @@ The plugin can create a dedicated virtual environment for these packages.
 ### 1. Install xTB / g-xTB
 
 Install an xTB executable that supports the methods you want, including the new `--gxtb` flag if you want to use g-xTB.
+g-xtb capable version can be found here: `https://github.com/grimme-lab/g-xtb`
 
 Make sure you know the path to the executable, for example:
 
