@@ -25,24 +25,6 @@ the selected normal mode and optimizes both downhill sides. It is not a strict
 mass-weighted IRC integrator.
 """
 
-"""
-PyMOL g-xTB / xTB Runner Plugin v12 - rebuilt and sanity-checked
-
-Main features
-- Qt-only GUI, no tkinter and no matplotlib dependency
-- Clean main dialog + separate Advanced Options dialog
-- Remembers xTB path and advanced settings in ~/.pymol_gxtb_plugin.json
-- Supports documented xTB calculation types
-- Adds GFN-FF method and initial Hessian/vibration visualization only:
-    sp (--scc), opt (--opt), path (--path final.xyz), grad, hess, ohess,
-    md, omd, metaopt, metadyn
-- GSM support is preparation / external execution only; GSM is not treated as native xTB
-- Freeze atoms from a PyMOL selection by converting it to 1-based XYZ indices
-- Loads optimization/path trajectories as explicit multi-state PyMOL objects
-- Enforces sticks + spheres + sphere_scale 0.2 after trajectory loads
-- Pure-Qt energy plot with current-frame marker and kcal/mol readout
-"""
-
 import json
 import os
 import platform
