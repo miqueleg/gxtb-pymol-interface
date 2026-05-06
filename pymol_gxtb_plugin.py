@@ -1827,6 +1827,7 @@ class GxTBDialog(QtWidgets.QDialog):
             cmdline.append("--grad")
         elif calc == "hess":
             cmdline.append("--hess")
+            cmdline.append("--acc 0.1")
             if method == "gfnff":
                 self.append_log("[Hessian warning] GFN-FF Hessians are known to be less robust in some xTB builds; Safe mode may be needed if this crashes.")
 
