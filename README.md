@@ -1,10 +1,12 @@
 # PyMOL g-xTB Runner
 
+### For most of the users in Windows and MAC machines, is heavily recomended to use the Standalone versions. More info [here](Standalone)
+
 **PyMOL g-xTB Runner** is a Qt-based PyMOL plugin for launching and visualizing xTB/g-xTB calculations directly from the PyMOL interface.
 
 It is designed for fast exploratory modeling of QM regions, reaction paths, transition-state guesses, frequencies, vibrations, NEB paths, and IRC-like downhill products/reactants.
 
-> Public version: **1.0.1**
+> Public version: **1.0.2**
 
 ---
 
