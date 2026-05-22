@@ -76,8 +76,8 @@ Start PyMOL g-xTB Runner.app
 If macOS blocks it:
 
 1. Right-click `Start PyMOL g-xTB Runner.app`
-2. Click **Open**
-3. Click **Open** again
+2. Will be blocked. Go to settings -> Privacy and Security -> Security -> allow Execution
+3. Right-Click `Start PyMOL g-xTB Runner.app` again after permission is given.
 
 ## 4. Wait for the first build
 
@@ -93,7 +93,7 @@ The launcher opens:
 http://localhost:6080/vnc.html
 ```
 
-The PyMOL g-xTB Runner plugin should open automatically.
+The PyMOL g-xTB Runner plugin should open automatically after pressing `Connect`
 
 If it does not, check the PyMOL menu or type this in the PyMOL command line:
 
@@ -150,6 +150,7 @@ Open the extracted folder and double-click:
 ```text
 Start-Windows.bat
 ```
+If it does not execute or gets blocked, right-click and -> Run as Administrator
 
 A terminal window opens. Keep it open while using the program.
 
