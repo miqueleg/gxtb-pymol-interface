@@ -2,13 +2,8 @@
 
 This is the standalone desktop version of **PyMOL g-xTB Runner**.
 
-It runs PyMOL, g-xTB, ASE, Sella, NumPy/SciPy, and the plugin inside Docker. Users do **not** need to install PyMOL, Python packages, ASE, Sella, or xTB manually.
+It runs PyMOL, g-xTB, ASE, Sella, NumPy/SciPy, and the plugin inside Docker. Users do **not** need to install PyMOL, Python packages, ASE, Sella, or xTB manually, but is not incompatible if you have it.
 
-The graphical PyMOL session opens in a web browser through noVNC:
-
-```text
-http://localhost:6080/vnc.html
-```
 
 ## Download the correct package
 
@@ -38,6 +33,82 @@ The Docker image built by the launcher includes:
 - noVNC browser desktop
 
 The plugin’s old **Install ASE/Sella deps** button has been removed from this container version because ASE and Sella are installed during the Docker image build.
+
+---
+
+# Windows installation
+
+## 1. Install Docker Desktop
+
+Download Docker Desktop from:
+
+```text
+https://www.docker.com/products/docker-desktop/
+```
+
+During installation, allow Docker to use WSL2 if asked.
+
+After installation, open Docker Desktop and wait until it says Docker is running.
+
+## 2. Download and extract the Windows package
+
+Download:
+
+```text
+PyMOL-gxTB-Runner-Windows.zip
+```
+
+Right-click and choose **Extract All...**
+
+## 3. Start the program
+
+Open the extracted folder and double-click:
+
+```text
+Start-Windows.bat
+```
+If it does not execute or gets blocked, right-click and -> Run as Administrator
+
+A terminal window opens. Keep it open while using the program.
+
+## 4. Wait for the first build
+
+The first launch builds the Docker image locally. This can take several minutes.
+
+Later launches are faster.
+
+## 5. Use PyMOL in the browser
+
+The launcher opens:
+
+```text
+http://localhost:6080/vnc.html
+```
+
+The PyMOL g-xTB Runner plugin should open automatically.
+
+If it does not, check the PyMOL menu or type this in the PyMOL command line:
+
+```text
+gxtb_runner
+```
+
+## Windows work folder
+
+Your working folder is:
+
+```text
+C:\Users\<your-user>\pymol-gxtb-work
+```
+
+Inside the container/PyMOL it appears as:
+
+```text
+/work
+```
+
+Put input structures there if you want them visible inside the container.
+
 
 ---
 
@@ -119,80 +190,6 @@ Put input structures there if you want them visible inside the container.
 
 ---
 
-# Windows installation
-
-## 1. Install Docker Desktop
-
-Download Docker Desktop from:
-
-```text
-https://www.docker.com/products/docker-desktop/
-```
-
-During installation, allow Docker to use WSL2 if asked.
-
-After installation, open Docker Desktop and wait until it says Docker is running.
-
-## 2. Download and extract the Windows package
-
-Download:
-
-```text
-PyMOL-gxTB-Runner-Windows.zip
-```
-
-Right-click and choose **Extract All...**
-
-## 3. Start the program
-
-Open the extracted folder and double-click:
-
-```text
-Start-Windows.bat
-```
-If it does not execute or gets blocked, right-click and -> Run as Administrator
-
-A terminal window opens. Keep it open while using the program.
-
-## 4. Wait for the first build
-
-The first launch builds the Docker image locally. This can take several minutes.
-
-Later launches are faster.
-
-## 5. Use PyMOL in the browser
-
-The launcher opens:
-
-```text
-http://localhost:6080/vnc.html
-```
-
-The PyMOL g-xTB Runner plugin should open automatically.
-
-If it does not, check the PyMOL menu or type this in the PyMOL command line:
-
-```text
-gxtb_runner
-```
-
-## Windows work folder
-
-Your working folder is:
-
-```text
-C:\Users\<your-user>\pymol-gxtb-work
-```
-
-Inside the container/PyMOL it appears as:
-
-```text
-/work
-```
-
-Put input structures there if you want them visible inside the container.
-
----
 
 # Important notes
 
