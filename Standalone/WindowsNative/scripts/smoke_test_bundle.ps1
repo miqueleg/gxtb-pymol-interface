@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = "Stop"
 $BundleDir = [System.IO.Path]::GetFullPath($BundleDir)
 $HealthCheck = Join-Path $BundleDir "launcher\health_check.cmd"
-$PymolExe = Join-Path $BundleDir "app_env\Scripts\pymol.exe"
+$PythonExe = Join-Path $BundleDir "app_env\python.exe"
 
 if (-not (Test-Path $HealthCheck)) {
     throw "Health check script not found: $HealthCheck"
@@ -19,19 +19,19 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if (-not $SkipPymolCli) {
-    if (-not (Test-Path $PymolExe)) {
-        throw "PyMOL executable not found: $PymolExe"
+    if (-not (Test-Path $PythonExe)) {
+        throw "Python executable not found: $PythonExe"
     }
 
     Write-Host "Running non-GUI PyMOL import smoke test..."
-    & $PymolExe -cq -d "python import ase, sella, numpy, scipy, jax, jaxlib, matplotlib; print('imports ok')"
+    & $PythonExe -m pymol -cq -d "python import ase, sella, numpy, scipy, jax, jaxlib, matplotlib; print('imports ok')"
     if ($LASTEXITCODE -ne 0) {
         throw "PyMOL non-GUI import smoke test failed."
     }
 
     $pluginLoader = Join-Path $BundleDir "plugin\load_plugin.py"
     Write-Host "Running non-GUI PyMOL plugin-loader smoke test..."
-    & $PymolExe -cq -r $pluginLoader
+    & $PythonExe -m pymol -cq -r $pluginLoader
     if ($LASTEXITCODE -ne 0) {
         throw "PyMOL plugin-loader smoke test failed."
     }

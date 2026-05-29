@@ -120,7 +120,7 @@ PYMOL_GXTB_XTB_PATH=<app>\gxtb\bin\xtb.exe
 PYMOL_GXTB_ASE_PYTHON=<app>\app_env\python.exe
 ```
 
-It also prepends the bundled g-xTB and Python environment directories to `PATH` before starting PyMOL with `plugin\load_plugin.py`.
+It also prepends the bundled g-xTB and Python environment directories to `PATH` before starting PyMOL with `app_env\python.exe -m pymol -r plugin\load_plugin.py`. The launcher deliberately avoids `app_env\Scripts\pymol.exe` because that generated entry point is not reliably relocatable after installer deployment.
 
 ## Troubleshooting
 

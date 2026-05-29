@@ -21,10 +21,10 @@ if exist "%ENV_DIR%\python.exe" (
   exit /b 1
 )
 
-if exist "%ENV_DIR%\Scripts\pymol.exe" (
-  echo [OK] PyMOL found
+if exist "%ENV_DIR%\python.exe" (
+  "%ENV_DIR%\python.exe" -c "import pymol; print('[OK] PyMOL Python module import works')" || exit /b 1
 ) else (
-  echo [ERROR] PyMOL not found: "%ENV_DIR%\Scripts\pymol.exe"
+  echo [ERROR] Bundled Python not found: "%ENV_DIR%\python.exe"
   exit /b 1
 )
 
@@ -68,7 +68,7 @@ if exist "%PLUGIN_LOADER%" (
 "%ENV_DIR%\python.exe" -c "import jax, jaxlib; print('[OK] JAX/JAXlib import works')" || exit /b 1
 "%ENV_DIR%\python.exe" -c "import matplotlib; print('[OK] matplotlib import works')" || exit /b 1
 "%ENV_DIR%\python.exe" -c "import sys; sys.path.insert(0, r'%APPDIR%\plugin'); import pymol_gxtb_plugin; print('[OK] Plugin Python import works')" || exit /b 1
-"%ENV_DIR%\Scripts\pymol.exe" -cq -r "%PLUGIN_LOADER%" || exit /b 1
+"%ENV_DIR%\python.exe" -m pymol -cq -r "%PLUGIN_LOADER%" || exit /b 1
 echo [OK] PyMOL plugin loader works
 
 echo.
