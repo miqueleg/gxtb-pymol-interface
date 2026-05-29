@@ -1,26 +1,9 @@
 # PyMOL g-xTB Runner Standalone Builds
 
-The standalone distribution is now Windows-native only.
 
-Use:
 
-```text
-Standalone/WindowsNative/
-```
+## How to use:
 
-The old Docker, WSL, Linux-container, macOS tarball, Linux tarball, and legacy Windows ZIP standalone packages have been removed from the repository.
-
-## Current Output
-
-The Windows-native build creates:
-
-```text
-Standalone/WindowsNative/dist/
-  PyMOL-gxTB-Runner-Windows-Portable.zip
-  PyMOL-gxTB-Runner-Windows-Setup.exe
-```
-
-The final Windows user experience is:
 
 ```text
 Download installer or portable ZIP
