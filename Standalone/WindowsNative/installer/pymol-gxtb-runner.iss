@@ -1,5 +1,5 @@
 #define AppName "PyMOL-gxTB Runner"
-#define AppVersion "1.0.2"
+#define AppVersion "1.0.7"
 #define AppPublisher "PyMOL-gxTB Runner contributors"
 #ifndef BundleDir
 #define BundleDir "..\build\PyMOL-gxTB-Runner"

@@ -116,23 +116,73 @@ if (Test-Path $VendoredSella) {
 }
 
 $loader = @'
+import importlib.util
 import os
 import sys
+import sysconfig
 import traceback
 from pathlib import Path
 
-plugin_dir = Path(__file__).resolve().parent
+def _resolve_plugin_dir():
+    env_dir = os.environ.get("PYMOL_GXTB_PLUGIN_DIR", "").strip()
+    candidates = []
+    if env_dir:
+        candidates.append(Path(env_dir))
+    file_value = globals().get("__file__")
+    if file_value:
+        candidates.append(Path(file_value).resolve().parent)
+    if getattr(sys, "prefix", None):
+        candidates.append(Path(sys.prefix).resolve().parent / "plugin")
+    if getattr(sys, "executable", None):
+        candidates.append(Path(sys.executable).resolve().parent.parent / "plugin")
+    candidates.append(Path.cwd())
+
+    for candidate in candidates:
+        try:
+            if (candidate / "pymol_gxtb_plugin.py").is_file():
+                return candidate
+        except Exception:
+            pass
+    raise FileNotFoundError(
+        "Could not locate pymol_gxtb_plugin.py. Set PYMOL_GXTB_PLUGIN_DIR "
+        "to the bundle plugin directory."
+    )
+
+def _preload_stdlib_cmd():
+    """Ensure JAX imports Python stdlib cmd, not pymol/cmd.py as top-level cmd."""
+    existing = sys.modules.get("cmd")
+    existing_file = str(getattr(existing, "__file__", "")) if existing else ""
+    if existing and "pymol" not in existing_file.lower():
+        return
+
+    stdlib = Path(sysconfig.get_path("stdlib"))
+    cmd_py = stdlib / "cmd.py"
+    if not cmd_py.is_file():
+        return
+
+    spec = importlib.util.spec_from_file_location("cmd", cmd_py)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["cmd"] = module
+    spec.loader.exec_module(module)
+
+plugin_dir = _resolve_plugin_dir()
 app_dir = plugin_dir.parent
 xtb_path = app_dir / "gxtb" / "bin" / "xtb.exe"
 python_path = app_dir / "app_env" / "python.exe"
 
 os.environ.setdefault("PYMOL_GXTB_XTB_PATH", str(xtb_path))
 os.environ.setdefault("PYMOL_GXTB_ASE_PYTHON", str(python_path))
-sys.path.insert(0, str(plugin_dir))
+os.environ.setdefault("PYMOL_GXTB_PLUGIN_DIR", str(plugin_dir))
+
+plugin_dir_text = str(plugin_dir)
+if plugin_dir_text not in sys.path:
+    sys.path.insert(0, plugin_dir_text)
+_preload_stdlib_cmd()
 
 try:
     from pymol import cmd
     import pymol_gxtb_plugin
+    import sella
 
     cmd.extend("gxtb_runner", pymol_gxtb_plugin.run_plugin_gui)
     try:
@@ -140,6 +190,13 @@ try:
     except Exception:
         print("Warning: PyMOL menu registration failed; the gxtb_runner command is still available.")
         traceback.print_exc()
+    if os.environ.get("PYMOL_GXTB_AUTO_OPEN", "").strip() == "1":
+        try:
+            from pymol.Qt import QtCore
+            QtCore.QTimer.singleShot(500, pymol_gxtb_plugin.run_plugin_gui)
+        except Exception:
+            print("Warning: automatic plugin dialog open failed; use Plugin > PyMOL g-xTB Runner or command gxtb_runner.")
+            traceback.print_exc()
     print("PyMOL g-xTB Runner plugin loaded from", plugin_dir)
     print("Bundled xTB path:", os.environ["PYMOL_GXTB_XTB_PATH"])
 except Exception:

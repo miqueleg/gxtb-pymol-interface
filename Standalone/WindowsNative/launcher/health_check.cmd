@@ -12,6 +12,7 @@ set "PLUGIN_LOADER=%APPDIR%\plugin\load_plugin.py"
 set "PATH=%GXTB_DIR%;%ENV_DIR%;%ENV_DIR%\Scripts;%ENV_DIR%\Library\bin;%PATH%"
 set "PYMOL_GXTB_XTB_PATH=%GXTB_DIR%\xtb.exe"
 set "PYMOL_GXTB_ASE_PYTHON=%ENV_DIR%\python.exe"
+set "PYMOL_GXTB_PLUGIN_DIR=%APPDIR%\plugin"
 set "PYTHONNOUSERSITE=1"
 
 if exist "%ENV_DIR%\python.exe" (
@@ -68,7 +69,7 @@ if exist "%PLUGIN_LOADER%" (
 "%ENV_DIR%\python.exe" -c "import jax, jaxlib; print('[OK] JAX/JAXlib import works')" || exit /b 1
 "%ENV_DIR%\python.exe" -c "import matplotlib; print('[OK] matplotlib import works')" || exit /b 1
 "%ENV_DIR%\python.exe" -c "import sys; sys.path.insert(0, r'%APPDIR%\plugin'); import pymol_gxtb_plugin; print('[OK] Plugin Python import works')" || exit /b 1
-"%ENV_DIR%\python.exe" -m pymol -cq -r "%PLUGIN_LOADER%" || exit /b 1
+"%ENV_DIR%\python.exe" -m pymol -cq -r "%PLUGIN_LOADER%" -d "python import sella, jax, jaxlib; print('Sella/JAX import inside PyMOL works')" || exit /b 1
 echo [OK] PyMOL plugin loader works
 
 echo.
