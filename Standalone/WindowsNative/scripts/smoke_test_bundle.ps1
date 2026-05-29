@@ -24,9 +24,16 @@ if (-not $SkipPymolCli) {
     }
 
     Write-Host "Running non-GUI PyMOL import smoke test..."
-    & $PymolExe -cq -d "python import ase, sella, numpy, scipy; print('imports ok')"
+    & $PymolExe -cq -d "python import ase, sella, numpy, scipy, jax, jaxlib, matplotlib; print('imports ok')"
     if ($LASTEXITCODE -ne 0) {
         throw "PyMOL non-GUI import smoke test failed."
+    }
+
+    $pluginLoader = Join-Path $BundleDir "plugin\load_plugin.py"
+    Write-Host "Running non-GUI PyMOL plugin-loader smoke test..."
+    & $PymolExe -cq -r $pluginLoader
+    if ($LASTEXITCODE -ne 0) {
+        throw "PyMOL plugin-loader smoke test failed."
     }
 }
 

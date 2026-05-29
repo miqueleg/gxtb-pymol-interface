@@ -29,7 +29,7 @@ PyMOL opens with the gxtb-pymol plugin already loaded
 ASE, Sella, NumPy, SciPy, PyMOL, and g-xTB are already available
 ```
 
-Users do not need Docker, WSL2, Apptainer, Conda/Mamba, Python, PyMOL, ASE, Sella, NumPy, SciPy, or g-xTB installed separately.
+Users do not need Docker, WSL2, Apptainer, Conda/Mamba, Python, PyMOL, ASE, Sella, NumPy, SciPy, JAX, or g-xTB installed separately.
 
 ## For Maintainers
 

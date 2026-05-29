@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-This Windows-native distribution bundles open-source components so end users can run PyMOL g-xTB Runner without installing Python, PyMOL, ASE, Sella, NumPy, SciPy, or g-xTB separately.
+This Windows-native distribution bundles open-source components so end users can run PyMOL g-xTB Runner without installing Python, PyMOL, ASE, Sella, NumPy, SciPy, JAX, or g-xTB separately.
 
 Review the license files shipped by each dependency in the bundled conda environment under `app_env/conda-meta/` and package metadata directories. This notice is a summary, not a replacement for the upstream licenses.
 
@@ -24,9 +24,13 @@ NumPy and SciPy are distributed under BSD-style licenses. See their package meta
 
 matplotlib is distributed under its upstream open-source license terms. It is included because PyMOL and scientific Python workflows commonly need plotting support.
 
+## JAX and JAXlib
+
+JAX and JAXlib are installed as Sella runtime dependencies. See their package metadata in the bundled environment for complete license text.
+
 ## g-xTB / xTB
 
-The bundled `xtb.exe` is downloaded from the configured upstream Windows release during the build. See the upstream xTB/g-xTB project and any license files included in the extracted archive for complete terms.
+The bundled `xtb.exe` is downloaded from the configured upstream g-xTB 2.0.1 Windows archive during the build. g-xTB is provided by `grimme-lab/g-xtb` as a modified xtb 6.7.1 binary interfacing with a modified tblite library. See the upstream g-xTB project and any license files included in the extracted archive for complete terms.
 
 ## This Repository
 

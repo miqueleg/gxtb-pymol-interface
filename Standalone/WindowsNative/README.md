@@ -8,7 +8,7 @@ dist/
   PyMOL-gxTB-Runner-Windows-Setup.exe
 ```
 
-The installed or unzipped application contains its own Windows Python environment, Open-Source PyMOL, NumPy, SciPy, ASE, Sella, matplotlib, and a downloaded Windows `xtb.exe` with its required DLLs. End users do not need Docker, WSL2, Apptainer, Conda/Mamba, Python, PyMOL, ASE, Sella, NumPy, SciPy, or g-xTB installed separately.
+The installed or unzipped application contains its own Windows Python environment, Open-Source PyMOL, NumPy, SciPy, ASE, Sella, JAX/JAXlib, matplotlib, and a downloaded Windows g-xTB 2.0.1 `xtb.exe` with its required DLLs. End users do not need Docker, WSL2, Apptainer, Conda/Mamba, Python, PyMOL, ASE, Sella, NumPy, SciPy, JAX, or g-xTB installed separately.
 
 The ZIP and installer are generated outputs. They are not committed to the repository. For normal users, publish them through GitHub Releases by pushing a version tag.
 
@@ -41,14 +41,25 @@ Build the installer after the portable bundle exists:
 powershell -ExecutionPolicy Bypass -File .\Standalone\WindowsNative\scripts\build_installer.ps1
 ```
 
-To pin or override the xTB/g-xTB download, set one of these before running `build_portable.ps1`:
+The default g-xTB download is pinned to the official `grimme-lab/g-xtb` Windows archive:
 
-```powershell
-$env:XTB_WINDOWS_VERSION = "v6.7.1"
-$env:XTB_WINDOWS_URL = "https://example.invalid/path/to/windows-xtb.zip"
+```text
+https://github.com/grimme-lab/g-xtb/raw/refs/heads/main/binaries/xtb-6.7.1-gxtb-140526-windows-x86_64.zip
 ```
 
-`XTB_WINDOWS_URL` is the most reproducible option. If it is not set, `download_gxtb_windows.ps1` queries `grimme-lab/xtb` releases and selects the first Windows-looking archive asset.
+The build verifies its SHA256:
+
+```text
+fa6d6491b38d895196e2312c6ce34b74e60cd974f9c01da6c3ee567b3ca41830
+```
+
+To override the g-xTB archive, set these before running `build_portable.ps1`:
+
+```powershell
+$env:GXTB_WINDOWS_VERSION = "2.0.1"
+$env:GXTB_WINDOWS_URL = "https://example.invalid/path/to/windows-gxtb.zip"
+$env:GXTB_WINDOWS_SHA256 = "expected_sha256_or_empty_to_skip"
+```
 
 ## Build with GitHub Actions
 
@@ -123,12 +134,27 @@ PyMOL-gxTB-Runner\launcher\health_check.cmd
 
 If PyMOL is missing, the bundled environment was not created correctly. Rebuild the portable ZIP and check the GitHub Actions log around the micromamba environment creation step.
 
+If double-clicking the desktop shortcut opens a console and then PyMOL does not appear, run:
+
+```bat
+PyMOL-gxTB-Runner\launcher\Start-PyMOL-gxTB.cmd
+```
+
+The launcher writes a startup log to:
+
+```text
+%LOCALAPPDATA%\PyMOL-gxTB-Runner\logs\startup.log
+```
+
+On startup failure, the command window stays open and prints the last log lines. Include that log when reporting a Windows startup problem.
+
 ### g-xTB not found
 
-Run `launcher\health_check.cmd`. If it reports that `xtb.exe` is missing, the xTB/g-xTB archive did not download or did not contain a Windows `xtb.exe`. Rebuild with a known-good URL:
+Run `launcher\health_check.cmd`. If it reports that `xtb.exe` is missing, the g-xTB archive did not download or did not contain a Windows `xtb.exe`. Rebuild with a known-good URL:
 
 ```powershell
-$env:XTB_WINDOWS_URL = "https://example.invalid/path/to/windows-xtb.zip"
+$env:GXTB_WINDOWS_URL = "https://example.invalid/path/to/windows-gxtb.zip"
+$env:GXTB_WINDOWS_SHA256 = "expected_sha256_or_empty_to_skip"
 powershell -ExecutionPolicy Bypass -File .\Standalone\WindowsNative\scripts\build_portable.ps1
 ```
 

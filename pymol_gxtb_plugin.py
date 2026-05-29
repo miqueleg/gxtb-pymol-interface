@@ -1255,7 +1255,7 @@ class GxTBDialog(QtWidgets.QDialog):
         self.calc_box = QtWidgets.QComboBox()
         self.calc_box.addItems(["sp", "opt", "ts_sella", "neb_ase", "path", "gsm_prepare", "gsm_run", "grad", "hess", "md", "omd", "metaopt", "metadyn"])
 
-        self.xtb_path = QtWidgets.QLineEdit(self.config.get("xtb_path", os.environ.get("PYMOL_GXTB_XTB_PATH", "xtb")))
+        self.xtb_path = QtWidgets.QLineEdit(os.environ.get("PYMOL_GXTB_XTB_PATH") or self.config.get("xtb_path", "xtb"))
         browse_btn = QtWidgets.QPushButton("Browse")
         browse_btn.clicked.connect(self.browse_xtb)
 
@@ -1477,7 +1477,7 @@ class GxTBDialog(QtWidgets.QDialog):
         return venv / "bin" / "python"
 
     def ase_base_python_command(self):
-        value = str(getattr(self.options, "ase_python", "")).strip() or os.environ.get("PYMOL_GXTB_ASE_PYTHON", "").strip() or self.discover_ase_python()
+        value = os.environ.get("PYMOL_GXTB_ASE_PYTHON", "").strip() or str(getattr(self.options, "ase_python", "")).strip() or self.discover_ase_python()
         if not value:
             return []
         if value.lower().startswith("py -"):

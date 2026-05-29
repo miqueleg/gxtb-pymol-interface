@@ -118,6 +118,7 @@ if (Test-Path $VendoredSella) {
 $loader = @'
 import os
 import sys
+import traceback
 from pathlib import Path
 
 plugin_dir = Path(__file__).resolve().parent
@@ -129,10 +130,22 @@ os.environ.setdefault("PYMOL_GXTB_XTB_PATH", str(xtb_path))
 os.environ.setdefault("PYMOL_GXTB_ASE_PYTHON", str(python_path))
 sys.path.insert(0, str(plugin_dir))
 
-import pymol_gxtb_plugin
+try:
+    from pymol import cmd
+    import pymol_gxtb_plugin
 
-pymol_gxtb_plugin.__init_plugin__(None)
-print("PyMOL g-xTB Runner plugin loaded from", plugin_dir)
+    cmd.extend("gxtb_runner", pymol_gxtb_plugin.run_plugin_gui)
+    try:
+        pymol_gxtb_plugin.__init_plugin__(None)
+    except Exception:
+        print("Warning: PyMOL menu registration failed; the gxtb_runner command is still available.")
+        traceback.print_exc()
+    print("PyMOL g-xTB Runner plugin loaded from", plugin_dir)
+    print("Bundled xTB path:", os.environ["PYMOL_GXTB_XTB_PATH"])
+except Exception:
+    print("Failed to load PyMOL g-xTB Runner plugin from", plugin_dir)
+    traceback.print_exc()
+    raise
 '@
 Set-Content -Path (Join-Path $PluginDir "load_plugin.py") -Value $loader -Encoding UTF8
 
@@ -157,7 +170,7 @@ Double-click launcher\Start-PyMOL-gxTB.cmd to start PyMOL with the g-xTB plugin 
 
 Run launcher\health_check.cmd if PyMOL does not start or the plugin cannot find dependencies.
 
-This bundle is self-contained. Users do not need Docker, WSL, Apptainer, Conda, Python, PyMOL, ASE, Sella, NumPy, SciPy, or g-xTB installed separately.
+This bundle is self-contained. Users do not need Docker, WSL, Apptainer, Conda, Python, PyMOL, ASE, Sella, NumPy, SciPy, JAX, or g-xTB installed separately.
 "@
 Set-Content -Path (Join-Path $BundleDir "README_FIRST.txt") -Value $readmeFirst -Encoding UTF8
 

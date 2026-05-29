@@ -1,17 +1,15 @@
 param(
     [string]$Destination = (Join-Path $PSScriptRoot "..\build\gxtb"),
-    [string]$XtbVersion = $env:XTB_WINDOWS_VERSION,
-    [string]$XtbUrl = $env:XTB_WINDOWS_URL
+    [string]$GxtbVersion = $(if ($env:GXTB_WINDOWS_VERSION) { $env:GXTB_WINDOWS_VERSION } else { "2.0.1" }),
+    [string]$GxtbUrl = $(if ($env:GXTB_WINDOWS_URL) { $env:GXTB_WINDOWS_URL } else { "https://github.com/grimme-lab/g-xtb/raw/refs/heads/main/binaries/xtb-6.7.1-gxtb-140526-windows-x86_64.zip" }),
+    [string]$GxtbSha256 = $(if ($env:GXTB_WINDOWS_SHA256) { $env:GXTB_WINDOWS_SHA256 } else { "fa6d6491b38d895196e2312c6ce34b74e60cd974f9c01da6c3ee567b3ca41830" })
 )
 
 $ErrorActionPreference = "Stop"
 
-# The g-xTB functionality is exposed through recent xTB builds as xtb.exe.
-# Prefer an explicit URL for reproducible builds. If XTB_WINDOWS_URL is not
-# set, the script queries the configured GitHub release and chooses a Windows
-# archive asset containing "windows", "win", or "mingw" in its name.
-$Repo = "grimme-lab/xtb"
-$AssetNamePattern = "(?i)(windows|win|mingw).*\.(zip|7z|tar\.xz|tar\.gz)$"
+# g-xTB 2.0.1 is distributed by grimme-lab/g-xtb as a modified xtb 6.7.1
+# executable plus required DLLs. Keep the URL and SHA configurable, but default
+# to the pinned Windows archive used for this standalone distribution.
 
 function New-CleanDirectory {
     param([string]$Path)
@@ -35,7 +33,7 @@ function Expand-ArchiveByExtension {
     if ($Archive -match "\.7z$") {
         $sevenZip = Get-Command 7z.exe -ErrorAction SilentlyContinue
         if (-not $sevenZip) {
-            throw "Cannot extract '$Archive'. Install 7-Zip or provide a .zip/.tar.* g-xTB/xTB archive."
+            throw "Cannot extract '$Archive'. Install 7-Zip or provide a .zip/.tar.* g-xTB archive."
         }
         & $sevenZip.Source x "-o$Target" $Archive -y
         if ($LASTEXITCODE -ne 0) {
@@ -46,32 +44,13 @@ function Expand-ArchiveByExtension {
 
     $tar = Get-Command tar.exe -ErrorAction SilentlyContinue
     if (-not $tar) {
-        throw "Cannot extract '$Archive'. Install tar.exe support or provide a .zip g-xTB/xTB archive."
+        throw "Cannot extract '$Archive'. Install tar.exe support or provide a .zip g-xTB archive."
     }
 
     & $tar.Source -xf $Archive -C $Target
     if ($LASTEXITCODE -ne 0) {
         throw "tar.exe failed to extract '$Archive'."
     }
-}
-
-function Get-GitHubAssetUrl {
-    if ([string]::IsNullOrWhiteSpace($XtbVersion)) {
-        $api = "https://api.github.com/repos/$Repo/releases/latest"
-    } else {
-        $api = "https://api.github.com/repos/$Repo/releases/tags/$XtbVersion"
-    }
-
-    Write-Host "Resolving Windows xTB asset from $api"
-    $release = Invoke-RestMethod -Uri $api -Headers @{ "User-Agent" = "PyMOL-gxTB-Runner-WindowsNative" }
-    $asset = $release.assets | Where-Object { $_.name -match $AssetNamePattern } | Select-Object -First 1
-    if (-not $asset) {
-        $names = ($release.assets | ForEach-Object { $_.name }) -join ", "
-        throw "Could not find a Windows xTB asset in release '$($release.tag_name)'. Set XTB_WINDOWS_URL explicitly. Assets: $names"
-    }
-
-    Write-Host "Selected asset: $($asset.name)"
-    return $asset.browser_download_url
 }
 
 $Destination = [System.IO.Path]::GetFullPath($Destination)
@@ -83,19 +62,28 @@ New-CleanDirectory -Path $Destination
 New-CleanDirectory -Path $DownloadDir
 New-CleanDirectory -Path $ExtractDir
 
-if ([string]::IsNullOrWhiteSpace($XtbUrl)) {
-    $XtbUrl = Get-GitHubAssetUrl
+if ([string]::IsNullOrWhiteSpace($GxtbUrl)) {
+    throw "GXTB_WINDOWS_URL is empty. Set it to a Windows g-xTB archive containing xtb.exe."
 }
 
-$archiveName = Split-Path -Leaf ([System.Uri]$XtbUrl).AbsolutePath
+$archiveName = Split-Path -Leaf ([System.Uri]$GxtbUrl).AbsolutePath
 if ([string]::IsNullOrWhiteSpace($archiveName)) {
-    $archiveName = "xtb-windows.zip"
+    $archiveName = "gxtb-windows.zip"
 }
 $archive = Join-Path $DownloadDir $archiveName
 
-Write-Host "Downloading xTB/g-xTB Windows archive:"
-Write-Host "  $XtbUrl"
-Invoke-WebRequest -Uri $XtbUrl -OutFile $archive
+Write-Host "Downloading g-xTB $GxtbVersion Windows archive:"
+Write-Host "  $GxtbUrl"
+Invoke-WebRequest -Uri $GxtbUrl -OutFile $archive
+
+if (-not [string]::IsNullOrWhiteSpace($GxtbSha256)) {
+    $actualSha256 = (Get-FileHash -Algorithm SHA256 -Path $archive).Hash.ToLowerInvariant()
+    $expectedSha256 = $GxtbSha256.Trim().ToLowerInvariant()
+    if ($actualSha256 -ne $expectedSha256) {
+        throw "SHA256 mismatch for '$archiveName'. Expected $expectedSha256 but got $actualSha256."
+    }
+    Write-Host "SHA256 verified: $actualSha256"
+}
 
 Expand-ArchiveByExtension -Archive $archive -Target $ExtractDir
 
@@ -120,5 +108,14 @@ if ($licenseFiles) {
     }
 }
 
-Write-Host "xTB/g-xTB installed at $binDest"
+Write-Host "g-xTB installed at $binDest"
 & (Join-Path $binDest "xtb.exe") --version
+if ($LASTEXITCODE -ne 0) {
+    throw "xtb.exe --version failed."
+}
+
+$helpText = & (Join-Path $binDest "xtb.exe") --help
+if ($LASTEXITCODE -ne 0 -or -not ($helpText -match "gxtb")) {
+    throw "The downloaded xtb.exe help output did not advertise g-xTB support."
+}
+Write-Host "g-xTB support verified in xtb.exe --help."
