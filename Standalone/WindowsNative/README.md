@@ -10,6 +10,8 @@ dist/
 
 The installed or unzipped application contains its own Windows Python environment, Open-Source PyMOL, NumPy, SciPy, ASE, Sella, matplotlib, and a downloaded Windows `xtb.exe` with its required DLLs. End users do not need Docker, WSL2, Apptainer, Conda/Mamba, Python, PyMOL, ASE, Sella, NumPy, SciPy, or g-xTB installed separately.
 
+The ZIP and installer are generated outputs. They are not committed to the repository. For normal users, publish them through GitHub Releases by pushing a version tag.
+
 Sella 2.3.5 source code is vendored in this repository under:
 
 ```text
@@ -54,13 +56,37 @@ Run the workflow named **Build Windows Native Standalone** from the GitHub Actio
 
 The workflow runs on `windows-latest`, builds the portable ZIP, attempts the Inno Setup installer, and uploads both artifacts when available. If Inno Setup fails, the workflow still uploads the portable ZIP and adds a clear warning.
 
-## Download GitHub Actions Artifacts
+## Publish a Release for Users
+
+From a clean local checkout, commit the changes and push a version tag:
+
+```bash
+git tag v1.0.3
+git push origin v1.0.3
+```
+
+When the tag workflow finishes, GitHub Releases will contain:
+
+```text
+PyMOL-gxTB-Runner-Windows-Portable.zip
+PyMOL-gxTB-Runner-Windows-Setup.exe
+```
+
+Users should download from:
+
+```text
+https://github.com/miqueleg/gxtb-pymol-interface/releases
+```
+
+## Download CI Artifacts for Testing
 
 1. Open the repository on GitHub.
 2. Go to **Actions**.
 3. Select **Build Windows Native Standalone**.
 4. Open the completed run.
 5. Download `PyMOL-gxTB-Runner-Windows-Portable` or `PyMOL-gxTB-Runner-Windows-Setup`.
+
+These CI artifacts are useful for maintainers testing a build. GitHub Releases are the intended download path for final users.
 
 ## Normal Windows User Workflow
 

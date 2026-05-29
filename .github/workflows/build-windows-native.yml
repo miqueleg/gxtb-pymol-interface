@@ -3,9 +3,14 @@ name: Build Windows Native Standalone
 on:
   workflow_dispatch:
   push:
+    tags:
+      - "v*"
     paths:
       - "Standalone/WindowsNative/**"
       - ".github/workflows/build-windows-native.yml"
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -55,3 +60,17 @@ jobs:
           name: PyMOL-gxTB-Runner-Windows-Setup
           path: Standalone/WindowsNative/dist/PyMOL-gxTB-Runner-Windows-Setup.exe
           if-no-files-found: error
+
+      - name: Publish portable ZIP to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Standalone/WindowsNative/dist/PyMOL-gxTB-Runner-Windows-Portable.zip
+          generate_release_notes: true
+
+      - name: Publish installer to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/') && steps.installer.outcome == 'success'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Standalone/WindowsNative/dist/PyMOL-gxTB-Runner-Windows-Setup.exe
+          generate_release_notes: true
