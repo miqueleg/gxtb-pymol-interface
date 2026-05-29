@@ -1,6 +1,6 @@
 # PyMOL g-xTB Runner
 
-### For most of the users in Windows and MAC machines, is heavily recomended to use the Standalone versions. More info [here](Standalone)
+### For Windows users, the recommended distribution is the Windows-native standalone build. More info [here](Standalone).
 
 **PyMOL g-xTB Runner** is a Qt-based PyMOL plugin for launching and visualizing xTB/g-xTB calculations directly from the PyMOL interface.
 

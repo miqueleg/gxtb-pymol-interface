@@ -1,0 +1,19 @@
+name: pymol-gxtb-runner
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - setuptools
+  - wheel
+  - pymol-open-source
+  - numpy
+  - scipy
+  - ase
+  - matplotlib
+  - pyqt
+  - qt-main
+  - cython
+  - pip:
+      - jax
+      - jaxlib
