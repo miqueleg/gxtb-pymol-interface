@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-PyMOL g-xTB Runner - public v1.0.1
+PyMOL g-xTB Runner - public v1.0.3-EVB
 
 A PyMOL Qt plugin for launching xTB/g-xTB/GFN-FF calculations, viewing
 optimization/NEB/Sella trajectories, plotting energies, visualizing Hessian
-normal modes, and running a practical IRC-like ± downhill workflow from an
+normal modes, and running an EVB-ready mass-weighted IRC-like downhill workflow from an
 imaginary mode.
 
 Main features
@@ -16,13 +16,15 @@ Main features
 - Hessian frequency table and vibration viewer.
 - ASE/Sella TS optimization through a dedicated Python virtual environment.
 - ASE NEB from explicit reactant/product structures.
-- IRC-like ± downhill workflow from a selected imaginary mode.
+- EVB-ready mass-weighted IRC-like downhill workflow from a selected imaginary mode.
 
 Notes
 -----
-The IRC ± workflow is an approximate exploratory workflow: it displaces along
-the selected normal mode and optimizes both downhill sides. It is not a strict
-mass-weighted IRC integrator.
+The IRC ± workflow now follows the selected imaginary mode by mass-weighted
+downhill gradient integration. It keeps fixed atoms fixed and writes a continuous
+RC-like -> TS -> PROD-like multi-XYZ path for EVB setup. It is still an
+IRC-like xTB/g-xTB path generator, not a full Hessian predictor-corrector IRC
+as in major quantum-chemistry packages.
 """
 
 """
@@ -58,7 +60,7 @@ from pymol import cmd
 from pymol.Qt import QtCore, QtGui, QtWidgets
 
 PLUGIN_NAME = "PyMOL g-xTB Runner"
-PLUGIN_VERSION = "1.0.1"
+PLUGIN_VERSION = "1.0.3-EVB"
 CONFIG_PATH = Path.home() / ".pymol_gxtb_plugin.json"
 HARTREE_TO_KCAL_MOL = 627.509474
 
@@ -245,6 +247,16 @@ class AdvancedOptions:
         self.neb_climb = True
         self.neb_interpolate = "idpp"  # idpp or linear
 
+        # EVB-ready IRC-like path options. These control the mass-weighted
+        # downhill integration used by the "Run IRC ±" button after a Hessian.
+        self.irc_step_a_sqrtamu = 0.04
+        self.irc_max_steps = 120
+        self.irc_min_steps = 8
+        self.irc_fmax_stop_ev_a = 0.03
+        self.irc_energy_rise_stop_kcal = 5.0
+        self.irc_threads = 1
+        self.irc_orient_by_path_references = True
+
         self.md_block = (
             "$md\n"
             "   temp=298.15 # K\n"
@@ -353,6 +365,7 @@ class AdvancedOptionsDialog(QtWidgets.QDialog):
         self._build_path_gsm_tab()
         self._build_blocks_tab()
         self._build_ase_sella_tab()
+        self._build_irc_tab()
         self._build_properties_tab()
         self._build_raw_tab()
 
@@ -714,6 +727,81 @@ class AdvancedOptionsDialog(QtWidgets.QDialog):
         r += 1
         grid.addWidget(note, r, 0, 1, 4)
 
+
+    def _build_irc_tab(self):
+        w = QtWidgets.QWidget()
+        grid = QtWidgets.QGridLayout(w)
+        self.tabs.addTab(w, "EVB IRC")
+
+        note = QtWidgets.QLabel(
+            "These options control the Run IRC ± button after a Hessian. "
+            "The plugin follows the selected imaginary mode with mass-weighted downhill "
+            "xTB/g-xTB gradients, keeps fixed atoms frozen, and writes evb_irc_combined.xyz "
+            "for EVB setup."
+        )
+        note.setWordWrap(True)
+
+        self.irc_step_a_sqrtamu = QtWidgets.QDoubleSpinBox()
+        self.irc_step_a_sqrtamu.setRange(0.001, 1.0)
+        self.irc_step_a_sqrtamu.setDecimals(4)
+        self.irc_step_a_sqrtamu.setValue(float(getattr(self.options, "irc_step_a_sqrtamu", 0.04)))
+
+        self.irc_max_steps = QtWidgets.QSpinBox()
+        self.irc_max_steps.setRange(1, 10000)
+        self.irc_max_steps.setValue(int(getattr(self.options, "irc_max_steps", 120)))
+
+        self.irc_min_steps = QtWidgets.QSpinBox()
+        self.irc_min_steps.setRange(0, 1000)
+        self.irc_min_steps.setValue(int(getattr(self.options, "irc_min_steps", 8)))
+
+        self.irc_fmax_stop_ev_a = QtWidgets.QDoubleSpinBox()
+        self.irc_fmax_stop_ev_a.setRange(0.0001, 10.0)
+        self.irc_fmax_stop_ev_a.setDecimals(4)
+        self.irc_fmax_stop_ev_a.setValue(float(getattr(self.options, "irc_fmax_stop_ev_a", 0.03)))
+
+        self.irc_energy_rise_stop_kcal = QtWidgets.QDoubleSpinBox()
+        self.irc_energy_rise_stop_kcal.setRange(0.1, 500.0)
+        self.irc_energy_rise_stop_kcal.setDecimals(2)
+        self.irc_energy_rise_stop_kcal.setValue(float(getattr(self.options, "irc_energy_rise_stop_kcal", 5.0)))
+
+        self.irc_threads = QtWidgets.QSpinBox()
+        self.irc_threads.setRange(1, 64)
+        self.irc_threads.setValue(int(getattr(self.options, "irc_threads", 1)))
+
+        self.irc_orient_by_path_references = QtWidgets.QCheckBox(
+            "Use Path/GSM start and final selections to orient RC → TS → PROD when available"
+        )
+        self.irc_orient_by_path_references.setChecked(
+            bool(getattr(self.options, "irc_orient_by_path_references", True))
+        )
+
+        r = 0
+        grid.addWidget(note, r, 0, 1, 4)
+        r += 1
+        grid.addWidget(QtWidgets.QLabel("Mass-weighted step / Å√amu"), r, 0)
+        grid.addWidget(self.irc_step_a_sqrtamu, r, 1)
+        grid.addWidget(QtWidgets.QLabel("Max steps per side"), r, 2)
+        grid.addWidget(self.irc_max_steps, r, 3)
+        r += 1
+        grid.addWidget(QtWidgets.QLabel("Min steps per side"), r, 0)
+        grid.addWidget(self.irc_min_steps, r, 1)
+        grid.addWidget(QtWidgets.QLabel("Stop RMS gradient / eV Å⁻¹"), r, 2)
+        grid.addWidget(self.irc_fmax_stop_ev_a, r, 3)
+        r += 1
+        grid.addWidget(QtWidgets.QLabel("Stop if branch energy rises / kcal mol⁻¹"), r, 0)
+        grid.addWidget(self.irc_energy_rise_stop_kcal, r, 1)
+        grid.addWidget(QtWidgets.QLabel("xTB gradient threads"), r, 2)
+        grid.addWidget(self.irc_threads, r, 3)
+        r += 1
+        grid.addWidget(self.irc_orient_by_path_references, r, 0, 1, 4)
+        r += 1
+        help_label = QtWidgets.QLabel(
+            "Tip: set 'IRC disp / Å' in the main panel to 0.03–0.08 Å for EVB setup. "
+            "The previous 0.15 Å default can be too large for cluster-model IRC generation."
+        )
+        help_label.setWordWrap(True)
+        grid.addWidget(help_label, r, 0, 1, 4)
+
     def _build_properties_tab(self):
         w = QtWidgets.QWidget()
         grid = QtWidgets.QGridLayout(w)
@@ -799,6 +887,15 @@ class AdvancedOptionsDialog(QtWidgets.QDialog):
             self.options.ts_internal = self.ts_internal.isChecked()
             self.options.ts_hessian_initial_threads = self.ts_hessian_initial_threads.value()
             self.options.ts_live_update_interval = self.ts_live_update_interval.value()
+
+        if hasattr(self, "irc_step_a_sqrtamu"):
+            self.options.irc_step_a_sqrtamu = self.irc_step_a_sqrtamu.value()
+            self.options.irc_max_steps = self.irc_max_steps.value()
+            self.options.irc_min_steps = self.irc_min_steps.value()
+            self.options.irc_fmax_stop_ev_a = self.irc_fmax_stop_ev_a.value()
+            self.options.irc_energy_rise_stop_kcal = self.irc_energy_rise_stop_kcal.value()
+            self.options.irc_threads = self.irc_threads.value()
+            self.options.irc_orient_by_path_references = self.irc_orient_by_path_references.isChecked()
 
         for key, box in self.flag_boxes.items():
             self.options.flags[key] = box.isChecked()
@@ -1165,6 +1262,193 @@ def write_single_xyz_from_atoms(atoms, path, comment="structure"):
             fh.write(f"{atom['symbol']:2s} {atom['x']: .10f} {atom['y']: .10f} {atom['z']: .10f}\n")
 
 
+# ----------------------------- EVB-ready IRC helpers ---------------------------
+
+EVB_IRC_EV_PER_HARTREE = 27.211386245988
+EVB_IRC_KCAL_PER_HARTREE = 627.5094740631
+EVB_IRC_GRAD_CONV = 51.4220674763259  # Eh/bohr -> eV/Angstrom
+
+# Atomic masses used only for mass-weighted IRC stepping. The list covers common
+# biomolecular and organometallic cluster-model elements; unknown symbols fall back
+# to carbon-like mass so the path generator remains usable.
+EVB_IRC_ATOMIC_MASSES = {
+    "H": 1.00784, "D": 2.01410, "He": 4.00260,
+    "Li": 6.94, "Be": 9.01218, "B": 10.81, "C": 12.011, "N": 14.007,
+    "O": 15.999, "F": 18.998, "Ne": 20.180, "Na": 22.990, "Mg": 24.305,
+    "Al": 26.982, "Si": 28.085, "P": 30.974, "S": 32.06, "Cl": 35.45,
+    "Ar": 39.948, "K": 39.098, "Ca": 40.078, "Sc": 44.956, "Ti": 47.867,
+    "V": 50.942, "Cr": 51.996, "Mn": 54.938, "Fe": 55.845, "Co": 58.933,
+    "Ni": 58.693, "Cu": 63.546, "Zn": 65.38, "Ga": 69.723, "Ge": 72.630,
+    "As": 74.922, "Se": 78.971, "Br": 79.904, "Kr": 83.798, "Rb": 85.468,
+    "Sr": 87.62, "Y": 88.906, "Zr": 91.224, "Nb": 92.906, "Mo": 95.95,
+    "Ru": 101.07, "Rh": 102.906, "Pd": 106.42, "Ag": 107.868, "Cd": 112.414,
+    "I": 126.904, "Xe": 131.293, "Cs": 132.905, "Ba": 137.327, "W": 183.84,
+    "Pt": 195.084, "Au": 196.967, "Hg": 200.592,
+}
+
+
+def evb_irc_symbol_key(symbol):
+    s = str(symbol or "C").strip()
+    if len(s) >= 2 and s[:2].capitalize() in EVB_IRC_ATOMIC_MASSES:
+        return s[:2].capitalize()
+    return s[:1].upper() or "C"
+
+
+def evb_irc_atoms_to_symbols_coords(atoms):
+    symbols = []
+    coords = []
+    for atom in atoms:
+        symbols.append(evb_irc_symbol_key(atom.get("symbol", "C")))
+        coords.append([float(atom["x"]), float(atom["y"]), float(atom["z"])])
+    return symbols, coords
+
+
+def evb_irc_parse_fixed_atom_text(text, natoms):
+    fixed = set()
+    clean = split_atom_list(text)
+    if not clean:
+        return []
+    for chunk in clean.split(","):
+        if not chunk:
+            continue
+        try:
+            if "-" in chunk:
+                a, b = chunk.split("-", 1)
+                lo, hi = int(a), int(b)
+                if hi < lo:
+                    lo, hi = hi, lo
+                for idx in range(lo, hi + 1):
+                    if 1 <= idx <= natoms:
+                        fixed.add(idx - 1)
+            else:
+                idx = int(chunk)
+                if 1 <= idx <= natoms:
+                    fixed.add(idx - 1)
+        except Exception:
+            continue
+    return sorted(fixed)
+
+
+def evb_irc_mode_to_unit_cartesian(mode, natoms, fixed_zero_based):
+    if not mode.displacements or len(mode.displacements) != natoms:
+        raise ValueError(f"Mode atom count mismatch: geometry={natoms}, mode={len(mode.displacements) if mode.displacements else 0}")
+    fixed = set(int(i) for i in fixed_zero_based)
+    vectors = []
+    max_norm = 0.0
+    for i, d in enumerate(mode.displacements):
+        if i in fixed:
+            vec = [0.0, 0.0, 0.0]
+        else:
+            vec = [float(d[0]), float(d[1]), float(d[2])]
+        n = (vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]) ** 0.5
+        max_norm = max(max_norm, n)
+        vectors.append(vec)
+    if max_norm < 1.0e-14:
+        raise ValueError("Selected normal mode has near-zero displacement after fixed atoms are removed.")
+    return [[v[0] / max_norm, v[1] / max_norm, v[2] / max_norm] for v in vectors]
+
+
+def evb_irc_write_xyz(path, symbols, coords, comment):
+    with open(path, "w") as fh:
+        fh.write(f"{len(symbols)}\n{comment}\n")
+        for sym, xyz in zip(symbols, coords):
+            fh.write(f"{sym:2s} {xyz[0]: .10f} {xyz[1]: .10f} {xyz[2]: .10f}\n")
+
+
+def evb_irc_append_xyz(path, symbols, coords, comment):
+    with open(path, "a") as fh:
+        fh.write(f"{len(symbols)}\n{comment}\n")
+        for sym, xyz in zip(symbols, coords):
+            fh.write(f"{sym:2s} {xyz[0]: .10f} {xyz[1]: .10f} {xyz[2]: .10f}\n")
+
+
+def evb_irc_parse_energy_eh(text):
+    patterns = [
+        r"TOTAL\s+ENERGY\s+(-?\d+\.\d+(?:[EeDd][-+]?\d+)?)",
+        r"total\s+energy\s+(-?\d+\.\d+(?:[EeDd][-+]?\d+)?)",
+        r"energy\s*[:=]\s*(-?\d+\.\d+(?:[EeDd][-+]?\d+)?)",
+    ]
+    for pat in patterns:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m:
+            return float(m.group(1).replace("D", "E").replace("d", "e"))
+    return None
+
+
+def evb_irc_parse_gradient_file(path, natoms):
+    txt = Path(path).read_text(errors="ignore")
+    triples = []
+    for line in txt.splitlines():
+        vals = _find_floats(line)
+        if len(vals) == 3:
+            triples.append(vals)
+        elif len(vals) >= 4:
+            triples.append(vals[-3:])
+    if len(triples) < natoms:
+        raise RuntimeError(f"Could not parse {natoms} gradient triples from {path}")
+    return triples[-natoms:]
+
+
+def evb_irc_gradient_stats(grad_ev_a, fixed_zero_based):
+    fixed = set(fixed_zero_based or [])
+    vals = []
+    for i, g in enumerate(grad_ev_a):
+        if i in fixed:
+            continue
+        vals.append((g[0] * g[0] + g[1] * g[1] + g[2] * g[2]) ** 0.5)
+    if not vals:
+        return 0.0, 0.0
+    rms = (sum(v * v for v in vals) / len(vals)) ** 0.5
+    return rms, max(vals)
+
+
+def evb_irc_rmsd(a, b, fixed_zero_based):
+    if not a or not b or len(a) != len(b):
+        return float("inf")
+    fixed = set(fixed_zero_based or [])
+    vals = []
+    for i, (pa, pb) in enumerate(zip(a, b)):
+        if i in fixed:
+            continue
+        dx, dy, dz = pa[0] - pb[0], pa[1] - pb[1], pa[2] - pb[2]
+        vals.append(dx * dx + dy * dy + dz * dz)
+    if not vals:
+        return 0.0
+    return (sum(vals) / len(vals)) ** 0.5
+
+
+def evb_irc_path_continuity(coords, fixed_zero_based):
+    if len(coords) < 2:
+        return {"n_frames": len(coords), "max_adjacent_rmsd_A": None, "mean_adjacent_rmsd_A": None, "max_single_atom_jump_A": None}
+    rmsds = []
+    jumps = []
+    fixed = set(fixed_zero_based or [])
+    for a, b in zip(coords[:-1], coords[1:]):
+        vals = []
+        atom_jumps = []
+        for i, (pa, pb) in enumerate(zip(a, b)):
+            if i in fixed:
+                continue
+            dx, dy, dz = pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]
+            d2 = dx * dx + dy * dy + dz * dz
+            vals.append(d2)
+            atom_jumps.append(d2 ** 0.5)
+        if vals:
+            rmsds.append((sum(vals) / len(vals)) ** 0.5)
+            jumps.append(max(atom_jumps))
+    return {
+        "n_frames": len(coords),
+        "max_adjacent_rmsd_A": max(rmsds) if rmsds else None,
+        "mean_adjacent_rmsd_A": (sum(rmsds) / len(rmsds)) if rmsds else None,
+        "max_single_atom_jump_A": max(jumps) if jumps else None,
+    }
+
+
+def evb_irc_write_multimodel_pdb_from_xyz_frames(frames, path):
+    # Keep a local wrapper so EVB-IRC loading uses the robust PDB route.
+    write_multimodel_pdb_from_xyz_frames(frames, path)
+
+
 def multixyz_blocks_from_frames(frames):
     return [block for _, _, block in frames]
 
@@ -1255,7 +1539,7 @@ class GxTBDialog(QtWidgets.QDialog):
         self.calc_box = QtWidgets.QComboBox()
         self.calc_box.addItems(["sp", "opt", "ts_sella", "neb_ase", "path", "gsm_prepare", "gsm_run", "grad", "hess", "md", "omd", "metaopt", "metadyn"])
 
-        self.xtb_path = QtWidgets.QLineEdit(os.environ.get("PYMOL_GXTB_XTB_PATH") or self.config.get("xtb_path", "xtb"))
+        self.xtb_path = QtWidgets.QLineEdit(self.config.get("xtb_path", "xtb"))
         browse_btn = QtWidgets.QPushButton("Browse")
         browse_btn.clicked.connect(self.browse_xtb)
 
@@ -1343,7 +1627,7 @@ class GxTBDialog(QtWidgets.QDialog):
         self.irc_disp = QtWidgets.QDoubleSpinBox()
         self.irc_disp.setRange(0.01, 2.0)
         self.irc_disp.setDecimals(3)
-        self.irc_disp.setValue(0.15)
+        self.irc_disp.setValue(0.05)
         vib_controls.addWidget(self.irc_disp)
 
         self.irc_btn = QtWidgets.QPushButton("Run IRC ±")
@@ -1470,15 +1754,34 @@ class GxTBDialog(QtWidgets.QDialog):
             return sys.executable
         return ""
 
+    def ase_venv_dir_path(self):
+        raw = str(getattr(self.options, "ase_venv_dir", str(Path.home() / ".pymol_gxtb_ase_sella_venv")))
+        return Path(os.path.expandvars(os.path.expanduser(raw.strip().strip('"').strip("'"))))
+
     def ase_venv_python_path(self):
-        venv = Path(str(getattr(self.options, "ase_venv_dir", str(Path.home() / ".pymol_gxtb_ase_sella_venv")))).expanduser()
+        venv = self.ase_venv_dir_path()
         if platform.system().lower() == "windows":
             return venv / "Scripts" / "python.exe"
         return venv / "bin" / "python"
 
     def ase_base_python_command(self):
-        value = os.environ.get("PYMOL_GXTB_ASE_PYTHON", "").strip() or str(getattr(self.options, "ase_python", "")).strip() or self.discover_ase_python()
+        """
+        Return the base Python command as a subprocess list.
+
+        Windows notes:
+        - accepts 'py -3.12'
+        - accepts full paths with spaces
+        - if the user accidentally enters a venv folder, use its python.exe if present
+        """
+        value = str(getattr(self.options, "ase_python", "")).strip() or self.discover_ase_python()
         if not value:
+            return []
+        value = os.path.expandvars(os.path.expanduser(value.strip().strip('"').strip("'")))
+        if os.path.isdir(value):
+            candidate = Path(value) / ("Scripts/python.exe" if platform.system().lower() == "windows" else "bin/python")
+            if candidate.exists():
+                return [str(candidate)]
+            self.append_log("[Dependencies] Base Python field points to a folder. Use 'py -3.12' or full path to python.exe.")
             return []
         if value.lower().startswith("py -"):
             return value.split()
@@ -1554,14 +1857,14 @@ class GxTBDialog(QtWidgets.QDialog):
         """
         Create a dedicated ASE/Sella virtual environment and install dependencies.
 
-        Windows-specific robustness:
-        - create venv using the discovered base Python / py launcher
-        - run ensurepip inside the venv when available
-        - install binary scientific stack first: numpy, scipy, ase
-        - install Sella separately, with fallback strategies
+        v1.0.2 Windows improvements:
+        - expands %USERNAME% and ~ in paths
+        - detects venv-folder vs python.exe mistakes
+        - tries builtin venv first
+        - falls back to virtualenv if venv fails
+        - installs numpy/scipy/ase from wheels before installing Sella
         """
         self.persist_settings()
-
         base_pycmd = self.ase_base_python_command()
         commands = []
         bootstrap_requested = False
@@ -1577,12 +1880,8 @@ class GxTBDialog(QtWidgets.QDialog):
                     QtWidgets.QMessageBox.warning(self, "ASE/Sella Python", bootstrap_msg)
                     return
             else:
-                msg = (
-                    "Could not find a suitable Python 3.10–3.12 for ASE/Sella. "
-                    "Install Python 3.12, then enter its executable path in "
-                    "More options → ASE / Sella TS. On Windows you can use 'py -3.12' "
-                    "or the full path to python.exe."
-                )
+                msg = ("Could not find Python 3.10–3.12 for ASE/Sella. On Windows use 'py -3.12' "
+                       "or the full path to python.exe, not the venv folder.")
                 self.append_log("[Dependencies] " + msg)
                 QtWidgets.QMessageBox.warning(self, "ASE/Sella dependencies", msg)
                 return
@@ -1590,12 +1889,19 @@ class GxTBDialog(QtWidgets.QDialog):
         if base_pycmd:
             self.options.ase_python = " ".join(base_pycmd) if base_pycmd[0].lower() == "py" else base_pycmd[0]
             self.persist_settings()
-
-            venv_dir = Path(str(getattr(self.options, "ase_venv_dir", str(Path.home() / ".pymol_gxtb_ase_sella_venv")))).expanduser()
+            venv_dir = self.ase_venv_dir_path() if hasattr(self, "ase_venv_dir_path") else Path(str(getattr(self.options, "ase_venv_dir", str(Path.home() / ".pymol_gxtb_ase_sella_venv")))).expanduser()
             venv_py = self.ase_venv_python_path()
 
             commands.extend([
-                base_pycmd + ["-m", "venv", str(venv_dir)],
+                {"mkdir": str(venv_dir.parent)},
+                {
+                    "try_any": [
+                        base_pycmd + ["-m", "venv", str(venv_dir)],
+                        base_pycmd + ["-m", "pip", "install", "--user", "--upgrade", "virtualenv"],
+                        base_pycmd + ["-m", "virtualenv", str(venv_dir)],
+                    ],
+                    "label": "Create ASE/Sella virtual environment",
+                },
                 {"optional": [str(venv_py), "-m", "ensurepip", "--upgrade"]},
                 [str(venv_py), "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"],
                 [str(venv_py), "-m", "pip", "install", "--upgrade", "--only-binary=:all:", "numpy", "scipy", "ase"],
@@ -1612,10 +1918,9 @@ class GxTBDialog(QtWidgets.QDialog):
 
             self.append_log("[Dependencies] Creating/using dedicated ASE/Sella virtual environment:")
             self.append_log(f"[Dependencies] venv: {venv_dir}")
-            self.append_log("[Dependencies] Windows strategy: install numpy/scipy/ase from wheels first, then install Sella separately with fallbacks.")
+            self.append_log("[Dependencies] If builtin venv fails on Windows, this version falls back to virtualenv.")
             for c in commands:
                 self.append_log("[Dependencies] " + DependencyInstallerWorker.command_to_text(c))
-            self.append_log("[Dependencies] This avoids Homebrew/PEP 668 system-Python restrictions and avoids compiling SciPy from source on Windows.")
         else:
             self.append_log("[Dependencies] Python bootstrap will run first. After it completes, dependency installation will continue if Python is detected.")
 
@@ -2902,28 +3207,61 @@ print("Full optimizer trace kept at:", FULL_TRAJ_XYZ, flush=True)
                 if reply != QtWidgets.QMessageBox.Yes:
                     return
 
-            workdir = tempfile.mkdtemp(prefix="pymol_gxtb_irc_")
+            workdir = tempfile.mkdtemp(prefix="pymol_gxtb_evb_irc_")
             self.last_job_dir = workdir
 
-            ts_xyz = os.path.join(workdir, "ts.xyz")
-            minus_xyz = os.path.join(workdir, "minus_start.xyz")
-            plus_xyz = os.path.join(workdir, "plus_start.xyz")
-            write_single_xyz_from_atoms(atoms, ts_xyz, f"TS/base mode={mode.index} freq={mode.frequency:.4f}")
-            write_displaced_mode_xyz(atoms, mode, minus_xyz, displacement=float(self.irc_disp.value()), sign=-1.0)
-            write_displaced_mode_xyz(atoms, mode, plus_xyz, displacement=float(self.irc_disp.value()), sign=+1.0)
-
             obj = self.object_box.currentText().strip()
-            freeze_indices = self.compute_freeze_indices(obj, self.options.freeze_selection)
+            freeze_indices_1based = self.compute_freeze_indices(obj, self.options.freeze_selection)
+            manual_fixed_0 = evb_irc_parse_fixed_atom_text(getattr(self.options, "fixed_atoms", ""), len(atoms))
+            freeze_0 = {int(i) - 1 for i in freeze_indices_1based if int(i) >= 1}
+            fixed_zero_based = sorted(set(manual_fixed_0).union(freeze_0))
 
-            minus_dir = os.path.join(workdir, "minus")
-            plus_dir = os.path.join(workdir, "plus")
-            os.makedirs(minus_dir, exist_ok=True)
-            os.makedirs(plus_dir, exist_ok=True)
+            ts_xyz = os.path.join(workdir, "ts.xyz")
+            write_single_xyz_from_atoms(atoms, ts_xyz, f"TS/base mode={mode.index} freq={mode.frequency:.4f}")
 
-            minus_cmd = self.build_irc_opt_command(minus_xyz, minus_dir, freeze_indices)
-            plus_cmd = self.build_irc_opt_command(plus_xyz, plus_dir, freeze_indices)
+            xcontrol = self.build_xcontrol(os.path.join(workdir, "xcontrol_irc"), "grad", freeze_indices_1based)
 
-            self.traj_object = f"{sanitize_name(obj or 'TS')}_irc_mode_{mode.index}"
+            method = self.method_box.currentText()
+            solvent_args = []
+            if self.options.solvent_model != "none" and self.options.solvent_name:
+                if method == "gxtb":
+                    self.append_log("[EVB IRC solvent warning] Skipping implicit solvent with gxtb to avoid missing ALPB/GBSA parameter crash.")
+                else:
+                    solvent_args = [f"--{self.options.solvent_model}", self.options.solvent_name]
+
+            extra_args = []
+            if self.options.use_etemp:
+                extra_args += ["--etemp", str(float(self.options.etemp))]
+            if int(self.options.iterations) > 0:
+                extra_args += ["--iterations", str(int(self.options.iterations))]
+            if abs(float(self.options.acc) - 1.0) > 1e-9:
+                extra_args += ["--acc", str(float(self.options.acc))]
+
+            reactant_ref = None
+            product_ref = None
+            if bool(getattr(self.options, "irc_orient_by_path_references", True)):
+                start_sel = str(getattr(self.options, "path_start_selection", "")).strip()
+                final_sel = str(getattr(self.options, "path_final_selection", "")).strip()
+                if start_sel and final_sel:
+                    try:
+                        reactant_ref = self._model_atoms(start_sel)
+                        product_ref = self._model_atoms(final_sel)
+                        if len(reactant_ref) != len(atoms) or len(product_ref) != len(atoms):
+                            self.append_log(
+                                "[EVB IRC orientation warning] Path/GSM start/final selections do not have the same atom count as the TS; "
+                                "orientation will fall back to minus→plus."
+                            )
+                            reactant_ref = None
+                            product_ref = None
+                        else:
+                            self.write_xyz_from_selection(start_sel, os.path.join(workdir, "reactant_reference.xyz"), "EVB IRC reactant/reference")
+                            self.write_xyz_from_selection(final_sel, os.path.join(workdir, "product_reference.xyz"), "EVB IRC product/reference")
+                    except Exception as exc:
+                        self.append_log(f"[EVB IRC orientation warning] Could not read Path/GSM references: {exc}")
+                        reactant_ref = None
+                        product_ref = None
+
+            self.traj_object = f"{sanitize_name(obj or 'TS')}_evb_irc_mode_{mode.index}"
             if safe_obj_exists(self.traj_object):
                 try:
                     cmd.delete(self.traj_object)
@@ -2931,27 +3269,52 @@ print("Full optimizer trace kept at:", FULL_TRAJ_XYZ, flush=True)
                     pass
 
             self.log.clear()
-            self.append_log("IRC-like working directory: " + workdir)
-            self.append_log("Minus command: " + " ".join(map(str, minus_cmd)))
-            self.append_log("Plus command: " + " ".join(map(str, plus_cmd)))
-            self.append_log("[IRC] This is an IRC-like workflow: displace ± imaginary mode, optimize both downhill sides, then combine the path.")
-            self.status.setText("Running IRC-like ± downhill optimizations...")
+            self.append_log("EVB-ready IRC working directory: " + workdir)
+            self.append_log(
+                "[EVB IRC] Running mass-weighted downhill gradient integration from the selected mode, "
+                "not endpoint-only optimization."
+            )
+            self.append_log(
+                f"[EVB IRC] mode={mode.index}, freq={mode.frequency:.4f} cm^-1, "
+                f"initial displacement={float(self.irc_disp.value()):.4f} Å, "
+                f"step={float(getattr(self.options, 'irc_step_a_sqrtamu', 0.04)):.4f} Å√amu"
+            )
+            if fixed_zero_based:
+                preview = ",".join(str(i + 1) for i in fixed_zero_based[:40])
+                if len(fixed_zero_based) > 40:
+                    preview += "..."
+                self.append_log(f"[EVB IRC] Fixed atoms kept exactly fixed: {len(fixed_zero_based)} atoms -> {preview}")
+            self.status.setText("Running EVB-ready IRC-like mass-weighted path...")
             self.run_btn.setEnabled(False)
             self.stop_btn.setEnabled(True)
             self.irc_btn.setEnabled(False)
             self.plot.set_energies([])
             self.plot.set_current_frame(None)
-            self.energy_readout.setText("Energy readout: IRC running.")
+            self.energy_readout.setText("Energy readout: EVB IRC running.")
 
-            self.irc_worker = IRCWorker(
-                minus_cmd=minus_cmd,
-                plus_cmd=plus_cmd,
+            self.irc_worker = EVBIRCWorker(
+                xtb_exec=self.xtb_path.text().strip() or "xtb",
+                method_args=self.method_flag_args(),
+                charge=int(self.charge_box.value()),
+                uhf=int(self.mult_box.value() - 1),
+                solvent_args=solvent_args,
+                extra_args=extra_args,
+                xcontrol=xcontrol,
                 workdir=workdir,
-                minus_dir=minus_dir,
-                plus_dir=plus_dir,
-                ts_xyz=ts_xyz,
+                atoms=atoms,
+                mode=mode,
+                fixed_zero_based=fixed_zero_based,
+                reactant_ref_atoms=reactant_ref,
+                product_ref_atoms=product_ref,
                 traj_object=self.traj_object,
                 dynamic_rebond=self.options.dynamic_rebond,
+                initial_displacement=float(self.irc_disp.value()),
+                step_a_sqrtamu=float(getattr(self.options, "irc_step_a_sqrtamu", 0.04)),
+                max_steps=int(getattr(self.options, "irc_max_steps", 120)),
+                min_steps=int(getattr(self.options, "irc_min_steps", 8)),
+                fmax_stop_ev_a=float(getattr(self.options, "irc_fmax_stop_ev_a", 0.03)),
+                energy_rise_stop_kcal=float(getattr(self.options, "irc_energy_rise_stop_kcal", 5.0)),
+                threads=int(getattr(self.options, "irc_threads", 1)),
             )
             self.irc_worker.log_line.connect(self.append_log)
             self.irc_worker.energy_update.connect(self.plot.set_energies)
@@ -2961,8 +3324,8 @@ print("Full optimizer trace kept at:", FULL_TRAJ_XYZ, flush=True)
             self.irc_worker.start()
 
         except Exception as exc:
-            self.vib_status.setText(f"Could not start IRC: {exc}")
-            self.append_log(f"[IRC warning] {exc}")
+            self.vib_status.setText(f"Could not start EVB IRC: {exc}")
+            self.append_log(f"[EVB IRC warning] {exc}")
 
     def on_irc_finished(self, ok, message):
         self.run_btn.setEnabled(True)
@@ -3019,21 +3382,18 @@ class DependencyInstallerWorker(QtCore.QThread):
 
     def __init__(self, command, bootstrap_only=False):
         super().__init__()
-        # command may be a single command, a list of commands, or command specs:
-        # {"optional": cmd}
-        # {"try_any": [cmd1, cmd2, ...], "label": "..."}
         self.command = command
         self.bootstrap_only = bootstrap_only
 
     @staticmethod
     def command_to_text(command):
         if isinstance(command, dict):
+            if "mkdir" in command:
+                return "(mkdir) " + str(command["mkdir"])
             if "optional" in command:
                 return "(optional) " + " ".join(map(str, command["optional"]))
             if "try_any" in command:
-                label = command.get("label", "fallback command group")
-                return label + ": " + " OR ".join(" ".join(map(str, c)) for c in command["try_any"])
-            return str(command)
+                return command.get("label", "fallback") + ": " + " OR ".join(" ".join(map(str, c)) for c in command["try_any"])
         return " ".join(map(str, command))
 
     def _run_plain_command(self, command):
@@ -3043,46 +3403,503 @@ class DependencyInstallerWorker(QtCore.QThread):
             self.log_line.emit(line.rstrip())
         return proc.wait()
 
+    def _target_venv_exists(self, spec):
+        try:
+            for cmd in spec.get("try_any", []):
+                target = Path(str(cmd[-1]))
+                py = target / ("Scripts/python.exe" if platform.system().lower() == "windows" else "bin/python")
+                if py.exists():
+                    return True
+        except Exception:
+            pass
+        return False
+
     def run(self):
         try:
             commands = self.command
             if commands and isinstance(commands[0], str):
                 commands = [commands]
-
             for idx, spec in enumerate(commands, start=1):
                 self.log_line.emit(f"[Dependencies] Running step {idx}/{len(commands)}")
-
+                if isinstance(spec, dict) and "mkdir" in spec:
+                    Path(str(spec["mkdir"])).mkdir(parents=True, exist_ok=True)
+                    self.log_line.emit(f"[Dependencies] Created directory: {spec['mkdir']}")
+                    continue
                 if isinstance(spec, dict) and "optional" in spec:
                     rc = self._run_plain_command(spec["optional"])
                     if rc != 0:
                         self.log_line.emit(f"[Dependencies] Optional step failed with code {rc}; continuing.")
                     continue
-
                 if isinstance(spec, dict) and "try_any" in spec:
                     label = spec.get("label", "fallback command group")
                     last_rc = None
                     for attempt_no, command in enumerate(spec["try_any"], start=1):
                         self.log_line.emit(f"[Dependencies] {label}: attempt {attempt_no}/{len(spec['try_any'])}")
                         last_rc = self._run_plain_command(command)
-                        if last_rc == 0:
+                        if last_rc == 0 or self._target_venv_exists(spec):
                             self.log_line.emit(f"[Dependencies] {label}: succeeded on attempt {attempt_no}.")
                             break
                     else:
                         self.finished_ok.emit(False, f"{label} failed; last exit code {last_rc}.")
                         return
                     continue
-
                 rc = self._run_plain_command(spec)
                 if rc != 0:
                     self.finished_ok.emit(False, f"Dependency install step {idx} exited with code {rc}.")
                     return
-
             self.finished_ok.emit(True, "ASE/Sella dependencies installed and import check passed.")
         except Exception as exc:
             self.finished_ok.emit(False, f"Dependency install failed: {exc}")
 
 
 # ----------------------------- Worker thread ----------------------------------
+
+
+class EVBIRCWorker(QtCore.QThread):
+    log_line = QtCore.Signal(str)
+    energy_update = QtCore.Signal(list)
+    trajectory_update = QtCore.Signal(str, int)
+    finished_ok = QtCore.Signal(bool, str)
+
+    def __init__(
+        self,
+        xtb_exec,
+        method_args,
+        charge,
+        uhf,
+        solvent_args,
+        extra_args,
+        xcontrol,
+        workdir,
+        atoms,
+        mode,
+        fixed_zero_based,
+        reactant_ref_atoms,
+        product_ref_atoms,
+        traj_object,
+        dynamic_rebond=False,
+        initial_displacement=0.05,
+        step_a_sqrtamu=0.04,
+        max_steps=120,
+        min_steps=8,
+        fmax_stop_ev_a=0.03,
+        energy_rise_stop_kcal=5.0,
+        threads=1,
+    ):
+        super().__init__()
+        self.xtb_exec = xtb_exec
+        self.method_args = list(method_args or [])
+        self.charge = int(charge)
+        self.uhf = int(uhf)
+        self.solvent_args = list(solvent_args or [])
+        self.extra_args = list(extra_args or [])
+        self.xcontrol = xcontrol
+        self.workdir = workdir
+        self.atoms = list(atoms or [])
+        self.mode = mode
+        self.fixed_zero_based = sorted(set(int(i) for i in (fixed_zero_based or [])))
+        self.reactant_ref_atoms = reactant_ref_atoms
+        self.product_ref_atoms = product_ref_atoms
+        self.traj_object = traj_object
+        self.dynamic_rebond = dynamic_rebond
+        self.initial_displacement = float(initial_displacement)
+        self.step_a_sqrtamu = float(step_a_sqrtamu)
+        self.max_steps = int(max_steps)
+        self.min_steps = int(min_steps)
+        self.fmax_stop_ev_a = float(fmax_stop_ev_a)
+        self.energy_rise_stop_kcal = float(energy_rise_stop_kcal)
+        self.threads = max(1, int(threads))
+        self._stop = False
+        self.proc = None
+        self.grad_counter = 0
+        self.symbols, self.ts_coords = evb_irc_atoms_to_symbols_coords(self.atoms)
+        self.mode_unit = None
+        self.energies_for_plot = []
+
+    def stop(self):
+        self._stop = True
+        if self.proc and self.proc.poll() is None:
+            try:
+                self.proc.terminate()
+            except Exception:
+                pass
+
+    def _env(self):
+        env = os.environ.copy()
+        env["OMP_NUM_THREADS"] = str(self.threads)
+        env["OPENBLAS_NUM_THREADS"] = "1"
+        env["MKL_NUM_THREADS"] = "1"
+        env["VECLIB_MAXIMUM_THREADS"] = "1"
+        env["OMP_STACKSIZE"] = "512M"
+        return env
+
+    def _masses(self):
+        return [EVB_IRC_ATOMIC_MASSES.get(evb_irc_symbol_key(sym), 12.011) for sym in self.symbols]
+
+    def _run_gradient(self, coords, label):
+        self.grad_counter += 1
+        stepdir = Path(self.workdir) / "_evb_irc_gradients" / f"grad_{self.grad_counter:06d}_{label}"
+        stepdir.mkdir(parents=True, exist_ok=True)
+        xyz = stepdir / "geom.xyz"
+        evb_irc_write_xyz(xyz, self.symbols, coords, label)
+
+        xtb_exec = shutil.which(self.xtb_exec) or self.xtb_exec
+        command = [xtb_exec, str(xyz)] + self.method_args
+        command += ["--chrg", str(self.charge), "--uhf", str(self.uhf)]
+        command += self.solvent_args
+        command += self.extra_args
+        if self.xcontrol:
+            command += ["--input", str(self.xcontrol)]
+        command += ["--grad"]
+
+        self.log_line.emit("[EVB IRC xTB] " + " ".join(map(str, command)))
+        self.proc = subprocess.Popen(
+            command,
+            cwd=str(stepdir),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            env=self._env(),
+        )
+        stdout_lines = []
+        for line in self.proc.stdout:
+            if self._stop:
+                self.stop()
+                break
+            stdout_lines.append(line)
+            if "energy" in line.lower() or "error" in line.lower() or "failed" in line.lower():
+                self.log_line.emit(line.rstrip())
+        rc = self.proc.wait()
+        stdout = "".join(stdout_lines)
+        (stepdir / "xtb.out").write_text(stdout)
+        if rc != 0:
+            raise RuntimeError(f"xTB --grad failed for {label} with code {rc}. See {stepdir / 'xtb.out'}")
+
+        eh = evb_irc_parse_energy_eh(stdout)
+        if eh is None:
+            raise RuntimeError(f"Could not parse xTB energy for {label}. See {stepdir / 'xtb.out'}")
+
+        grad_path = stepdir / "gradient"
+        if not grad_path.exists():
+            candidates = list(stepdir.glob("*grad*"))
+            if candidates:
+                grad_path = candidates[0]
+            else:
+                raise RuntimeError(f"xTB did not write a gradient file for {label}. See {stepdir}")
+
+        grad_ha_bohr = evb_irc_parse_gradient_file(grad_path, len(self.symbols))
+        grad_ev_a = [
+            [float(g[0]) * EVB_IRC_GRAD_CONV, float(g[1]) * EVB_IRC_GRAD_CONV, float(g[2]) * EVB_IRC_GRAD_CONV]
+            for g in grad_ha_bohr
+        ]
+        return eh, grad_ev_a, str(stepdir)
+
+    def _copy_coords(self, coords):
+        return [[float(x), float(y), float(z)] for x, y, z in coords]
+
+    def _coords_plus_scaled_mode(self, sign):
+        coords = self._copy_coords(self.ts_coords)
+        for i, v in enumerate(self.mode_unit):
+            coords[i][0] += float(sign) * self.initial_displacement * v[0]
+            coords[i][1] += float(sign) * self.initial_displacement * v[1]
+            coords[i][2] += float(sign) * self.initial_displacement * v[2]
+        for idx in self.fixed_zero_based:
+            coords[idx] = list(self.ts_coords[idx])
+        return coords
+
+    def _branch(self, branch, sign):
+        out_xyz = Path(self.workdir) / f"evb_irc_{branch}.xyz"
+        try:
+            out_xyz.unlink()
+        except Exception:
+            pass
+
+        coords = self._coords_plus_scaled_mode(sign)
+        masses = self._masses()
+        sqrt_m = [m ** 0.5 for m in masses]
+        fixed = set(self.fixed_zero_based)
+        records = []
+        coord_records = []
+        prev_eh = None
+        cumulative_s = 0.0
+
+        for step in range(self.max_steps + 1):
+            if self._stop:
+                break
+
+            eh, grad_ev_a, stepdir = self._run_gradient(coords, f"{branch}_step_{step:04d}")
+            grad_rms, grad_max = evb_irc_gradient_stats(grad_ev_a, self.fixed_zero_based)
+            comment = (
+                f"branch={branch} step={step} E_Eh={eh:.12f} E_eV={eh * EVB_IRC_EV_PER_HARTREE:.10f} "
+                f"E_kcalmol={eh * EVB_IRC_KCAL_PER_HARTREE:.6f} grad_rms_eVA={grad_rms:.8f} "
+                f"grad_max_eVA={grad_max:.8f} s_A_sqrtamu={cumulative_s:.8f}"
+            )
+            evb_irc_append_xyz(out_xyz, self.symbols, coords, comment)
+            records.append({
+                "branch": branch,
+                "step": step,
+                "E_Eh": eh,
+                "E_eV": eh * EVB_IRC_EV_PER_HARTREE,
+                "grad_rms_eVA": grad_rms,
+                "grad_max_eVA": grad_max,
+                "s_A_sqrtamu": cumulative_s,
+                "gradient_dir": stepdir,
+                "comment": comment,
+            })
+            coord_records.append(self._copy_coords(coords))
+
+            self.energies_for_plot.append(eh)
+            self.energy_update.emit(self.energies_for_plot)
+
+            if step >= self.min_steps and grad_rms <= self.fmax_stop_ev_a:
+                self.log_line.emit(f"[EVB IRC] {branch}: stopping at step {step}; RMS gradient {grad_rms:.4f} eV/A <= threshold.")
+                break
+
+            if prev_eh is not None and step >= max(3, self.min_steps):
+                rise_kcal = (eh - prev_eh) * EVB_IRC_KCAL_PER_HARTREE
+                if rise_kcal > self.energy_rise_stop_kcal:
+                    self.log_line.emit(f"[EVB IRC] {branch}: stopping at step {step}; energy rose by {rise_kcal:.2f} kcal/mol.")
+                    break
+            prev_eh = eh
+
+            # Mass-weighted steepest descent:
+            # q_i = sqrt(m_i) * x_i; grad_q_i = grad_x_i / sqrt(m_i)
+            grad_q = []
+            norm_q2 = 0.0
+            for i, g in enumerate(grad_ev_a):
+                if i in fixed:
+                    q = [0.0, 0.0, 0.0]
+                else:
+                    sm = sqrt_m[i]
+                    q = [g[0] / sm, g[1] / sm, g[2] / sm]
+                grad_q.append(q)
+                norm_q2 += q[0] * q[0] + q[1] * q[1] + q[2] * q[2]
+            norm_q = norm_q2 ** 0.5
+            if norm_q < 1.0e-14:
+                self.log_line.emit(f"[EVB IRC] {branch}: zero mass-weighted gradient; stopping.")
+                break
+
+            cart_step = []
+            max_cart = 0.0
+            for i, q in enumerate(grad_q):
+                sm = sqrt_m[i]
+                # -grad_q direction in mass-weighted space, converted back to Cartesian.
+                dx = -self.step_a_sqrtamu * q[0] / norm_q / sm
+                dy = -self.step_a_sqrtamu * q[1] / norm_q / sm
+                dz = -self.step_a_sqrtamu * q[2] / norm_q / sm
+                if i in fixed:
+                    dx = dy = dz = 0.0
+                cart_step.append([dx, dy, dz])
+                max_cart = max(max_cart, (dx * dx + dy * dy + dz * dz) ** 0.5)
+
+            # Safety cap to avoid huge atom jumps if a light atom has the entire gradient.
+            if max_cart > 0.10:
+                scale = 0.10 / max_cart
+                cart_step = [[v[0] * scale, v[1] * scale, v[2] * scale] for v in cart_step]
+                max_cart = 0.10
+
+            for i in range(len(coords)):
+                coords[i][0] += cart_step[i][0]
+                coords[i][1] += cart_step[i][1]
+                coords[i][2] += cart_step[i][2]
+            for idx in self.fixed_zero_based:
+                coords[idx] = list(self.ts_coords[idx])
+            cumulative_s += self.step_a_sqrtamu
+
+            if step % 5 == 0:
+                self.log_line.emit(
+                    f"[EVB IRC] {branch} step {step}: E={eh:.10f} Eh, "
+                    f"grad_rms={grad_rms:.4f} eV/A, max_cart_step={max_cart:.4f} Å"
+                )
+
+        return records, coord_records, str(out_xyz)
+
+    def _reference_coords(self, atoms):
+        if not atoms or len(atoms) != len(self.symbols):
+            return None
+        _, coords = evb_irc_atoms_to_symbols_coords(atoms)
+        return coords
+
+    def _orient_path(self, minus_records, minus_coords, ts_record, plus_records, plus_coords):
+        reactant = self._reference_coords(self.reactant_ref_atoms)
+        product = self._reference_coords(self.product_ref_atoms)
+
+        path_a_coords = list(reversed(minus_coords)) + [self.ts_coords] + plus_coords
+        path_a_records = list(reversed(minus_records)) + [ts_record] + plus_records
+
+        path_b_coords = list(reversed(plus_coords)) + [self.ts_coords] + minus_coords
+        path_b_records = list(reversed(plus_records)) + [ts_record] + minus_records
+
+        orientation = {"orientation": "minus_to_plus", "reason": "default/no reactant-product references"}
+        if reactant is not None and product is not None:
+            score_a = evb_irc_rmsd(path_a_coords[0], reactant, self.fixed_zero_based) + evb_irc_rmsd(path_a_coords[-1], product, self.fixed_zero_based)
+            score_b = evb_irc_rmsd(path_b_coords[0], reactant, self.fixed_zero_based) + evb_irc_rmsd(path_b_coords[-1], product, self.fixed_zero_based)
+            orientation.update({
+                "minus_to_plus_score_rmsd_A": score_a,
+                "plus_to_minus_score_rmsd_A": score_b,
+                "reason": "oriented by Path/GSM start/final reference RMSD",
+            })
+            if score_b < score_a:
+                orientation["orientation"] = "plus_to_minus"
+                return path_b_records, path_b_coords, orientation
+        return path_a_records, path_a_coords, orientation
+
+    def _load_combined(self, frames):
+        frame_dir = os.path.join(self.workdir, "_pymol_evb_irc_frames")
+        os.makedirs(frame_dir, exist_ok=True)
+        if safe_obj_exists(self.traj_object):
+            try:
+                cmd.delete(self.traj_object)
+            except Exception:
+                pass
+
+        # Use multi-model PDB loading because it is more robust across PyMOL builds
+        # than repeated XYZ loads for multi-state objects.
+        pdb_path = os.path.join(frame_dir, "evb_irc_combined.pdb")
+        evb_irc_write_multimodel_pdb_from_xyz_frames(frames, pdb_path)
+        cmd.load(pdb_path, self.traj_object, state=0, format="pdb", finish=1, discrete=0, quiet=1, multiplex=0)
+
+        if safe_obj_exists(self.traj_object):
+            cmd.hide("everything", self.traj_object)
+            if self.dynamic_rebond:
+                try:
+                    cmd.rebond(self.traj_object)
+                except Exception:
+                    pass
+            cmd.show("sticks", self.traj_object)
+            cmd.show("spheres", self.traj_object)
+            cmd.set("sphere_scale", 0.2, self.traj_object)
+            cmd.set("stick_radius", 0.12, self.traj_object)
+            nstates = int(cmd.count_states(self.traj_object))
+            cmd.mset(f"1 -{nstates}")
+            cmd.set("all_states", 0)
+            cmd.frame(nstates)
+            cmd.refresh()
+            self.trajectory_update.emit(self.traj_object, nstates)
+
+    def run(self):
+        try:
+            self.mode_unit = evb_irc_mode_to_unit_cartesian(self.mode, len(self.symbols), self.fixed_zero_based)
+            Path(self.workdir).mkdir(parents=True, exist_ok=True)
+            self.log_line.emit("[EVB IRC] Starting minus branch.")
+            minus_records, minus_coords, minus_xyz = self._branch("minus", -1.0)
+            if self._stop:
+                self.finished_ok.emit(False, "EVB IRC stopped.")
+                return
+            self.log_line.emit("[EVB IRC] Starting plus branch.")
+            plus_records, plus_coords, plus_xyz = self._branch("plus", +1.0)
+            if self._stop:
+                self.finished_ok.emit(False, "EVB IRC stopped.")
+                return
+
+            ts_eh, ts_grad, ts_grad_dir = self._run_gradient(self.ts_coords, "TS_reference")
+            ts_grad_rms, ts_grad_max = evb_irc_gradient_stats(ts_grad, self.fixed_zero_based)
+            ts_record = {
+                "branch": "TS",
+                "step": 0,
+                "E_Eh": ts_eh,
+                "E_eV": ts_eh * EVB_IRC_EV_PER_HARTREE,
+                "grad_rms_eVA": ts_grad_rms,
+                "grad_max_eVA": ts_grad_max,
+                "s_A_sqrtamu": 0.0,
+                "gradient_dir": ts_grad_dir,
+                "comment": (
+                    f"branch=TS step=0 E_Eh={ts_eh:.12f} E_eV={ts_eh * EVB_IRC_EV_PER_HARTREE:.10f} "
+                    f"E_kcalmol={ts_eh * EVB_IRC_KCAL_PER_HARTREE:.6f} grad_rms_eVA={ts_grad_rms:.8f} "
+                    f"grad_max_eVA={ts_grad_max:.8f}"
+                ),
+            }
+
+            combined_records, combined_coords, orientation = self._orient_path(minus_records, minus_coords, ts_record, plus_records, plus_coords)
+
+            combined_xyz = os.path.join(self.workdir, "evb_irc_combined.xyz")
+            try:
+                os.remove(combined_xyz)
+            except Exception:
+                pass
+
+            frames = []
+            energies = []
+            for idx, (rec, coords) in enumerate(zip(combined_records, combined_coords), start=1):
+                rec = dict(rec)
+                rec["combined_frame"] = idx
+                comment = (
+                    f"frame={idx} branch={rec['branch']} branch_step={rec['step']} "
+                    f"E_Eh={rec['E_Eh']:.12f} E_eV={rec['E_eV']:.10f} "
+                    f"grad_rms_eVA={rec['grad_rms_eVA']:.8f}"
+                )
+                evb_irc_append_xyz(combined_xyz, self.symbols, coords, comment)
+                block_lines = [str(len(self.symbols)), comment]
+                for sym, xyz in zip(self.symbols, coords):
+                    block_lines.append(f"{sym:2s} {xyz[0]: .10f} {xyz[1]: .10f} {xyz[2]: .10f}")
+                block = "\n".join(block_lines) + "\n"
+                frames.append((len(self.symbols), comment, block))
+                energies.append(float(rec["E_Eh"]))
+
+            self.energy_update.emit(energies)
+
+            energies_tsv = os.path.join(self.workdir, "evb_irc_energies.tsv")
+            with open(energies_tsv, "w") as fh:
+                fh.write("combined_frame\tbranch\tbranch_step\tE_Eh\tE_eV\tE_kcalmol\tgrad_rms_eVA\tgrad_max_eVA\ts_A_sqrtamu\n")
+                for idx, rec in enumerate(combined_records, start=1):
+                    fh.write(
+                        f"{idx}\t{rec['branch']}\t{rec['step']}\t{rec['E_Eh']:.12f}\t"
+                        f"{rec['E_eV']:.10f}\t{rec['E_Eh'] * EVB_IRC_KCAL_PER_HARTREE:.6f}\t"
+                        f"{rec['grad_rms_eVA']:.8f}\t{rec['grad_max_eVA']:.8f}\t{rec['s_A_sqrtamu']:.8f}\n"
+                    )
+
+            continuity = evb_irc_path_continuity(combined_coords, self.fixed_zero_based)
+            report = {
+                "type": "EVB-ready mass-weighted IRC-like path",
+                "mode": {"index": self.mode.index, "frequency_cm-1": self.mode.frequency},
+                "fixed_atoms_1based": [i + 1 for i in self.fixed_zero_based],
+                "settings": {
+                    "initial_displacement_A": self.initial_displacement,
+                    "step_A_sqrtamu": self.step_a_sqrtamu,
+                    "max_steps_per_side": self.max_steps,
+                    "min_steps_per_side": self.min_steps,
+                    "fmax_stop_eV_A": self.fmax_stop_ev_a,
+                    "energy_rise_stop_kcal_mol": self.energy_rise_stop_kcal,
+                    "threads": self.threads,
+                },
+                "outputs": {
+                    "combined_xyz": combined_xyz,
+                    "minus_xyz": minus_xyz,
+                    "plus_xyz": plus_xyz,
+                    "energies_tsv": energies_tsv,
+                },
+                "orientation": orientation,
+                "continuity": continuity,
+                "branch_summary": {
+                    "minus_frames": len(minus_records),
+                    "plus_frames": len(plus_records),
+                    "combined_frames": len(combined_records),
+                    "minus_final_grad_rms_eVA": minus_records[-1]["grad_rms_eVA"] if minus_records else None,
+                    "plus_final_grad_rms_eVA": plus_records[-1]["grad_rms_eVA"] if plus_records else None,
+                    "ts_grad_rms_eVA": ts_grad_rms,
+                },
+                "warning": (
+                    "This is an IRC-like mass-weighted downhill path from xTB/g-xTB gradients, "
+                    "not a full Hessian predictor-corrector IRC. For EVB it should be used to "
+                    "identify RC/TS/PROD, seed structures, reactive CVs, and diabatic energy trends."
+                ),
+            }
+            report_json = os.path.join(self.workdir, "evb_irc_report.json")
+            Path(report_json).write_text(json.dumps(report, indent=2))
+
+            self.log_line.emit(f"[EVB IRC] Combined path written: {combined_xyz}")
+            self.log_line.emit(f"[EVB IRC] Energy table written: {energies_tsv}")
+            self.log_line.emit(f"[EVB IRC] Report written: {report_json}")
+            self.log_line.emit(f"[EVB IRC] Orientation: {orientation}")
+            self.log_line.emit(f"[EVB IRC] Continuity: {continuity}")
+
+            self._load_combined(frames)
+            self.finished_ok.emit(True, f"EVB-ready IRC finished. Job folder: {self.workdir}")
+
+        except Exception as exc:
+            self.finished_ok.emit(False, f"EVB IRC runtime error: {exc}")
+
 
 class IRCWorker(QtCore.QThread):
     log_line = QtCore.Signal(str)
@@ -3493,3 +4310,4 @@ class XTBWorker(QtCore.QThread):
             cmd.set("stick_radius", 0.12, self.traj_object)
         except Exception as exc:
             self.log_line.emit(f"[Trajectory representation warning] {exc}")
+
